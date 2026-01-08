@@ -6,7 +6,7 @@ import { FixedSizeList as List } from 'react-window';
 // @ts-ignore
 import AutoSizerImport from 'react-virtualized-auto-sizer';
 import { EMPLOYEES as STATIC_EMPLOYEES } from './mockData';
-import { Shift, ShiftDefinition, AppUser, Employee, Task } from './types';
+import { Shift, ShiftDefinition, AppUser, Employee, Task, ShiftHistoryEntry } from './types';
 import { getDaysInMonth, formatDate, SHIFT_STYLES, calculateHours, getDayShortNameCz, DEFAULT_SHIFT_DEFINITIONS, isCzechHoliday, validateShiftRules, calculateStats, formatDuration } from './utils';
 import { ShiftRow } from './components/ShiftRow';
 import { ShiftCard } from './components/ShiftCard';
@@ -376,13 +376,13 @@ function App() {
         oldShiftWithoutHistory = rest;
     }
 
-    const historyEntry = {
+    const historyEntry: ShiftHistoryEntry = {
       timestamp: new Date().toISOString(),
       userId: currentUser?.uid || 'unknown',
       userEmail: currentUser?.email || 'unknown',
       action: isUndoAction ? "Vrácení změny" : `Změna: ${updatedShift.confirmedType} (${updatedShift.startTime || '?'}-${updatedShift.endTime || '?'})`,
-      // Zde explicitně používáme null místo undefined
-      prevState: oldShiftWithoutHistory ? oldShiftWithoutHistory : null
+      // Zde přetypujeme na Partial<Shift> nebo null, aby to sedělo s definicí v types.ts
+      prevState: (oldShiftWithoutHistory as Partial<Shift>) || null
     };
 
     const shiftWithHistory: Shift = { 

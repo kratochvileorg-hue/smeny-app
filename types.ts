@@ -29,7 +29,7 @@ export interface ShiftHistoryEntry {
   userId: string;
   userEmail: string;
   action: string;
-  prevState?: Partial<Shift>; // Uložený stav před změnou pro Undo
+  prevState?: Partial<Shift> | null; // Přidáno | null pro kompatibilitu
 }
 
 export interface Shift {

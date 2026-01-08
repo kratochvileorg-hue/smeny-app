@@ -111,9 +111,13 @@ export const isCzechHoliday = (date: Date): string | null => {
 };
 
 export const calculateHours = (shift: Partial<Shift>, dailyFund: number = 8): number => {
-  if (shift.startTime && shift.endTime) {
+  if (shift.startTime && shift.endTime && shift.startTime.includes(':') && shift.endTime.includes(':')) {
     const [startH, startM] = shift.startTime.split(':').map(Number);
     const [endH, endM] = shift.endTime.split(':').map(Number);
+    
+    // Ochrana proti neplatným číslům
+    if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) return 0;
+
     const startDate = new Date(0, 0, 0, startH, startM);
     const endDate = new Date(0, 0, 0, endH, endM);
     let diff = (endDate.getTime() - startDate.getTime()) / 1000 / 60; 
