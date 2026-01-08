@@ -19,32 +19,37 @@ export const db = firebase.firestore();
 export const auth = firebase.auth();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-// Hloubková rekurzivní funkce, která projde celý objekt a každé 'undefined' změní na 'null'.
-// Firestore totiž 'undefined' nesnáší a vyhodí chybu, zatímco 'null' akceptuje.
+// Robustní čistící funkce - prochází objekt rekurzivně
 const sanitizeData = (data: any): any => {
-  // 1. Základní typy
-  if (data === undefined) return null;
-  if (data === null) return null;
+  // 1. Pokud je hodnota undefined nebo null, vrátíme null (Firestore null bere)
+  if (data === undefined || data === null) return null;
+  
+  // 2. Pokud to není objekt (číslo, string, boolean), vrátíme jak je
   if (typeof data !== 'object') return data;
 
-  // 2. Speciální objekty, které nechceme rozbíjet
+  // 3. Zachováme Date objekty a Firestore Timestamps
   if (data instanceof Date) return data;
-  // Detekce Firestore Timestamp objektu (má metodu toMillis)
-  if (typeof data.toMillis === 'function') return data; 
+  if (typeof data.toMillis === 'function') return data;
 
-  // 3. Pole - projdeme každý prvek
+  // 4. Pole - projdeme každou položku
   if (Array.isArray(data)) {
     return data.map(item => sanitizeData(item));
   }
 
-  // 4. Běžné objekty - projdeme klíče a vyčistíme hodnoty
-  const sanitizedObj: any = {};
+  // 5. Objekty - vytvoříme nový a zkopírujeme vyčištěné hodnoty
+  const cleanObj: any = {};
   for (const key in data) {
     if (Object.prototype.hasOwnProperty.call(data, key)) {
-      sanitizedObj[key] = sanitizeData(data[key]);
+      const val = data[key];
+      // Klíčový moment: pokud je hodnota undefined, explicitně uložíme null
+      if (val === undefined) {
+        cleanObj[key] = null;
+      } else {
+        cleanObj[key] = sanitizeData(val);
+      }
     }
   }
-  return sanitizedObj;
+  return cleanObj;
 };
 
 export const loginWithGoogle = async () => {
@@ -139,16 +144,26 @@ export const subscribeToShifts = (
 };
 
 export const saveShiftToDb = async (shift: Shift) => {
-  // Aplikujeme sanitizaci na celý objekt před odesláním
-  // Explicitně definujeme výchozí hodnoty pro volitelná pole, aby nevznikalo undefined
-  const dataToSave = sanitizeData({ 
-    ...shift, 
-    isAudit: shift.isAudit ?? false,
-    isOffered: shift.isOffered ?? false,
-    history: shift.history ?? [],
-    availability: shift.availability ?? '',
-    note: shift.note ?? ''
-  });
+  // Explicitně vytvoříme nový objekt a doplníme výchozí hodnoty
+  // Tím zajistíme, že do sanitizeData vůbec nevstoupí 'undefined' klíče z původního objektu
+  const plainShift = {
+    id: shift.id,
+    employeeId: shift.employeeId,
+    date: shift.date,
+    availability: shift.availability || '',
+    confirmedType: shift.confirmedType || '',
+    startTime: shift.startTime || '',
+    endTime: shift.endTime || '',
+    breakDuration: shift.breakDuration || 0,
+    note: shift.note || '',
+    isWeekend: !!shift.isWeekend,
+    isOffered: !!shift.isOffered,
+    isAudit: !!shift.isAudit,
+    history: shift.history || []
+  };
+
+  // Pro jistotu ještě proženeme sanitizací (hlavně kvůli vnořeným objektům v history)
+  const dataToSave = sanitizeData(plainShift);
   
   await db.collection("shifts").doc(dataToSave.id).set(dataToSave);
 };
