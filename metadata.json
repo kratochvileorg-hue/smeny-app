@@ -1,0 +1,7 @@
+{
+  "description": "Inteligentní plánování směn pro Kratochvíle",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "name": "Směny Kratochvíle"
+}
