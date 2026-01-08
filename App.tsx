@@ -368,14 +368,29 @@ function App() {
   const handleShiftChange = async (updatedShift: Shift, isUndoAction = false) => {
     if (monthLocked && viewMode === 'live') return alert("Měsíc je uzamčen. Změny nejsou povoleny.");
     const oldShift = shifts.find(s => s.id === updatedShift.id);
+    
+    // Vytvoříme kopii bez pole history, abychom zamezili rekurzivnímu zanořování a chybám s undefined
+    let oldShiftWithoutHistory = null;
+    if (oldShift) {
+        const { history, ...rest } = oldShift;
+        oldShiftWithoutHistory = rest;
+    }
+
     const historyEntry = {
       timestamp: new Date().toISOString(),
       userId: currentUser?.uid || 'unknown',
       userEmail: currentUser?.email || 'unknown',
       action: isUndoAction ? "Vrácení změny" : `Změna: ${updatedShift.confirmedType} (${updatedShift.startTime || '?'}-${updatedShift.endTime || '?'})`,
-      prevState: oldShift ? { ...oldShift, history: undefined } : undefined
+      // Zde explicitně používáme null místo undefined
+      prevState: oldShiftWithoutHistory ? oldShiftWithoutHistory : null
     };
-    const shiftWithHistory: Shift = { ...updatedShift, history: [...(updatedShift.history || []), historyEntry], isAudit: viewMode === 'audit' };
+
+    const shiftWithHistory: Shift = { 
+        ...updatedShift, 
+        history: [...(updatedShift.history || []), historyEntry], 
+        isAudit: viewMode === 'audit' 
+    };
+
     setIsSaving(true);
     try { 
       await saveShiftToDb(shiftWithHistory); 

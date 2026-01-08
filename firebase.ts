@@ -19,27 +19,32 @@ export const db = firebase.firestore();
 export const auth = firebase.auth();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-// Funkce pro odstranění undefined hodnot, které Firestore odmítá.
-// Používáme JSON.parse(JSON.stringify(...)), což je nejspolehlivější způsob, 
-// jak se zbavit všech 'undefined' v hluboké struktuře objektu.
+// Hloubková rekurzivní funkce, která projde celý objekt a každé 'undefined' změní na 'null'.
+// Firestore totiž 'undefined' nesnáší a vyhodí chybu, zatímco 'null' akceptuje.
 const sanitizeData = (data: any): any => {
+  // 1. Základní typy
   if (data === undefined) return null;
-  
-  // Zachováme Date objekty (Firebase je umí zpracovat na Timestamp)
+  if (data === null) return null;
+  if (typeof data !== 'object') return data;
+
+  // 2. Speciální objekty, které nechceme rozbíjet
   if (data instanceof Date) return data;
-  
-  // Pokud je to Timestamp z Firebase, necháme ho být
-  if (data && typeof data === 'object' && typeof data.toMillis === 'function') {
-    return data;
+  // Detekce Firestore Timestamp objektu (má metodu toMillis)
+  if (typeof data.toMillis === 'function') return data; 
+
+  // 3. Pole - projdeme každý prvek
+  if (Array.isArray(data)) {
+    return data.map(item => sanitizeData(item));
   }
 
-  // Pro pole a objekty použijeme hluboké čištění
-  return JSON.parse(JSON.stringify(data, (key, value) => {
-    if (value === undefined) {
-      return null; // Změní undefined na null, což Firestore akceptuje
+  // 4. Běžné objekty - projdeme klíče a vyčistíme hodnoty
+  const sanitizedObj: any = {};
+  for (const key in data) {
+    if (Object.prototype.hasOwnProperty.call(data, key)) {
+      sanitizedObj[key] = sanitizeData(data[key]);
     }
-    return value;
-  }));
+  }
+  return sanitizedObj;
 };
 
 export const loginWithGoogle = async () => {
@@ -135,12 +140,16 @@ export const subscribeToShifts = (
 
 export const saveShiftToDb = async (shift: Shift) => {
   // Aplikujeme sanitizaci na celý objekt před odesláním
+  // Explicitně definujeme výchozí hodnoty pro volitelná pole, aby nevznikalo undefined
   const dataToSave = sanitizeData({ 
     ...shift, 
-    isAudit: !!shift.isAudit,
-    isOffered: !!shift.isOffered,
-    history: shift.history || []
+    isAudit: shift.isAudit ?? false,
+    isOffered: shift.isOffered ?? false,
+    history: shift.history ?? [],
+    availability: shift.availability ?? '',
+    note: shift.note ?? ''
   });
+  
   await db.collection("shifts").doc(dataToSave.id).set(dataToSave);
 };
 
