@@ -530,7 +530,7 @@ function App() {
           <div className="flex items-center gap-2">
             <div className={`p-2 rounded-xl text-white shadow-lg shrink-0 ${viewMode === 'audit' ? 'bg-secondary' : 'bg-primary'}`}><Users size={20} /></div>
             <div className="hidden sm:block">
-              <h1 className="text-sm font-bold text-slate-900 truncate leading-tight">Směny Kratochvíle</h1>
+              <h1 className="text-sm font-bold text-slate-900 truncate leading-tight">Směny Kratochvíle <span className="text-[9px] text-primary/50 ml-1">v1.1</span></h1>
               <div className="flex items-center gap-1.5">
                 <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest">{isSaving ? 'Ukládám...' : 'Uloženo'}</div>
                 <div className="w-1 h-1 bg-green-500 rounded-full animate-pulse" title="Data OK" />
