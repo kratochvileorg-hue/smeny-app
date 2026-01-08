@@ -19,31 +19,27 @@ export const db = firebase.firestore();
 export const auth = firebase.auth();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-// Funkce pro odstranění undefined hodnot, které Firestore odmítá
+// Funkce pro odstranění undefined hodnot, které Firestore odmítá.
+// Používáme JSON.parse(JSON.stringify(...)), což je nejspolehlivější způsob, 
+// jak se zbavit všech 'undefined' v hluboké struktuře objektu.
 const sanitizeData = (data: any): any => {
-  if (data === undefined) {
-    return null;
-  }
-  if (data === null) {
-    return null;
-  }
-  if (Array.isArray(data)) {
-    return data.map(item => sanitizeData(item));
-  }
-  if (data instanceof Date) {
+  if (data === undefined) return null;
+  
+  // Zachováme Date objekty (Firebase je umí zpracovat na Timestamp)
+  if (data instanceof Date) return data;
+  
+  // Pokud je to Timestamp z Firebase, necháme ho být
+  if (data && typeof data === 'object' && typeof data.toMillis === 'function') {
     return data;
   }
-  if (typeof data === 'object') {
-    const sanitized: any = {};
-    Object.keys(data).forEach(key => {
-      const value = data[key];
-      if (value !== undefined) {
-        sanitized[key] = sanitizeData(value);
-      }
-    });
-    return sanitized;
-  }
-  return data;
+
+  // Pro pole a objekty použijeme hluboké čištění
+  return JSON.parse(JSON.stringify(data, (key, value) => {
+    if (value === undefined) {
+      return null; // Změní undefined na null, což Firestore akceptuje
+    }
+    return value;
+  }));
 };
 
 export const loginWithGoogle = async () => {
@@ -138,6 +134,7 @@ export const subscribeToShifts = (
 };
 
 export const saveShiftToDb = async (shift: Shift) => {
+  // Aplikujeme sanitizaci na celý objekt před odesláním
   const dataToSave = sanitizeData({ 
     ...shift, 
     isAudit: !!shift.isAudit,
