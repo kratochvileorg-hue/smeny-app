@@ -206,6 +206,35 @@ export const saveShiftToDb = async (shift: Shift) => {
     JSON.stringify(sanitized === undefined ? {} : sanitized)
   );
 
+  // Debug: detect any undefined values in the original `shift` object
+  const findUndefinedPaths = (value: any, prefix = ''): string[] => {
+    const res: string[] = [];
+    if (value === undefined) {
+      res.push(prefix || '<root>');
+      return res;
+    }
+    if (value === null) return res;
+    if (typeof value !== 'object') return res;
+    if (value instanceof Date) return res;
+    if (typeof (value as any)?.toMillis === 'function') return res;
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => {
+        res.push(...findUndefinedPaths(v, `${prefix}[${i}]`));
+      });
+      return res;
+    }
+    for (const [k, v] of Object.entries(value)) {
+      const path = prefix ? `${prefix}.${k}` : k;
+      res.push(...findUndefinedPaths(v, path));
+    }
+    return res;
+  };
+
+  const undefinedPaths = findUndefinedPaths(shift);
+  if (undefinedPaths.length > 0) {
+    console.error('saveShiftToDb: original shift contains undefined fields', id, undefinedPaths, shift);
+  }
+
   try {
     await db.collection('shifts').doc(id).set(dataToSave, { merge: true });
   } catch (error) {
