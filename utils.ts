@@ -296,3 +296,5 @@ export const generateICS = (shifts: Shift[], employeeName: string): string => {
   icsContent += `END:VCALENDAR${N}`;
   return icsContent;
 };
+
+
