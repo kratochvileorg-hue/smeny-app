@@ -1,4 +1,3 @@
-
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 import 'firebase/compat/auth';
@@ -14,56 +13,72 @@ const firebaseConfig = {
   measurementId: "G-8F4MFFDMQM"
 };
 
-const app = !firebase.apps.length ? firebase.initializeApp(firebaseConfig) : firebase.app();
-export const db = firebase.firestore();
-export const auth = firebase.auth();
+// Initialize Firebase app once
+export const firebaseApp = !firebase.apps.length
+  ? firebase.initializeApp(firebaseConfig)
+  : firebase.app();
+
+export const db = firebaseApp.firestore();
+export const auth = firebaseApp.auth();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-// Robustní čistící funkce - prochází objekt rekurzivně
-const sanitizeData = (data: any): any => {
-  // 1. Pokud je hodnota undefined nebo null, vrátíme null (Firestore null bere)
-  if (data === undefined || data === null) return null;
-  
-  // 2. Pokud to není objekt (číslo, string, boolean), vrátíme jak je
-  if (typeof data !== 'object') return data;
+/**
+ * Firestore neakceptuje hodnotu `undefined` nikde v objektu (ani vnořeně).
+ * Tahle funkce rekurzivně:
+ *  - odstraní klíče s hodnotou `undefined`
+ *  - v polích odstraní `undefined` prvky
+ *  - zachová `null`
+ *  - zachová Date a Firestore Timestamp
+ */
+const sanitizeForFirestore = (value: any): any => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
 
-  // 3. Zachováme Date objekty a Firestore Timestamps
-  if (data instanceof Date) return data;
-  if (typeof data.toMillis === 'function') return data;
+  // primitives
+  if (typeof value !== 'object') return value;
 
-  // 4. Pole - projdeme každou položku
-  if (Array.isArray(data)) {
-    return data.map(item => sanitizeData(item));
+  // Date
+  if (value instanceof Date) return value;
+
+  // Firestore Timestamp (compat) má typicky toMillis()
+  if (typeof (value as any)?.toMillis === 'function') return value;
+
+  // Arrays
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => sanitizeForFirestore(v))
+      .filter((v) => v !== undefined);
   }
 
-  // 5. Objekty - vytvoříme nový a zkopírujeme vyčištěné hodnoty
-  const cleanObj: any = {};
-  for (const key in data) {
-    if (Object.prototype.hasOwnProperty.call(data, key)) {
-      const val = data[key];
-      // Klíčový moment: pokud je hodnota undefined, explicitně uložíme null
-      if (val === undefined) {
-        cleanObj[key] = null;
-      } else {
-        cleanObj[key] = sanitizeData(val);
-      }
-    }
+  // Objects
+  const out: any = {};
+  for (const [k, v] of Object.entries(value)) {
+    const cleaned = sanitizeForFirestore(v);
+    if (cleaned === undefined) continue;
+    out[k] = cleaned;
   }
-  return cleanObj;
+  return out;
 };
 
 export const loginWithGoogle = async () => {
   try {
     const result = await auth.signInWithPopup(googleProvider);
     if (result.user?.email) {
-      await db.collection("users").doc(result.user.email.toLowerCase()).set({
-        email: result.user.email.toLowerCase(),
-        lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
-        displayName: result.user.displayName || 'Neznámý'
-      }, { merge: true });
+      const email = result.user.email.toLowerCase();
+      await db
+        .collection('users')
+        .doc(email)
+        .set(
+          {
+            email,
+            lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
+            displayName: result.user.displayName || 'Neznámý'
+          },
+          { merge: true }
+        );
     }
   } catch (error) {
-    console.error("Login failed", error);
+    console.error('Login failed', error);
   }
 };
 
@@ -71,45 +86,60 @@ export const logoutUser = async () => {
   await auth.signOut();
 };
 
-export const updateEmployeeMetadata = async (empId: string, data: Partial<Employee>) => {
-  await db.collection("employee_configs").doc(empId).set(sanitizeData(data), { merge: true });
+export const updateEmployeeMetadata = async (
+  empId: string,
+  data: Partial<Employee>
+) => {
+  await db
+    .collection('employee_configs')
+    .doc(empId)
+    .set(sanitizeForFirestore(data), { merge: true });
 };
 
-export const getEmployeeOverrides = async (): Promise<Record<string, Partial<Employee>>> => {
-  const snapshot = await db.collection("employee_configs").get();
+export const getEmployeeOverrides = async (): Promise<
+  Record<string, Partial<Employee>>
+> => {
+  const snapshot = await db.collection('employee_configs').get();
   const overrides: Record<string, Partial<Employee>> = {};
-  snapshot.forEach(doc => {
+  snapshot.forEach((doc) => {
     overrides[doc.id] = doc.data() as Partial<Employee>;
   });
   return overrides;
 };
 
-export const subscribeToCustomShifts = (callback: (defs: ShiftDefinition[]) => void) => {
-  return db.collection("custom_shift_definitions").onSnapshot(snap => {
+export const subscribeToCustomShifts = (
+  callback: (defs: ShiftDefinition[]) => void
+) => {
+  return db.collection('custom_shift_definitions').onSnapshot((snap) => {
     const defs: ShiftDefinition[] = [];
-    snap.forEach(doc => defs.push(doc.data() as ShiftDefinition));
+    snap.forEach((doc) => defs.push(doc.data() as ShiftDefinition));
     callback(defs);
   });
 };
 
 export const saveCustomShiftToDb = async (def: ShiftDefinition) => {
-  await db.collection("custom_shift_definitions").doc(def.code).set(sanitizeData(def));
+  await db
+    .collection('custom_shift_definitions')
+    .doc(def.code)
+    .set(sanitizeForFirestore(def), { merge: true });
 };
 
 export const deleteCustomShiftFromDb = async (code: string) => {
-  await db.collection("custom_shift_definitions").doc(code).delete();
+  await db.collection('custom_shift_definitions').doc(code).delete();
 };
 
 export const logErrorToDb = async (error: any, context: string = 'unspecified') => {
   const errorMessage = error?.message || String(error);
   try {
-    await db.collection("bug_reports").add({
+    await db.collection('bug_reports').add({
       message: errorMessage,
       context,
       timestamp: firebase.firestore.FieldValue.serverTimestamp(),
       userEmail: auth.currentUser?.email || 'anonymous'
     });
-  } catch (e) {}
+  } catch (e) {
+    // ignore logging errors
+  }
 };
 
 export const subscribeToShifts = (
@@ -118,20 +148,21 @@ export const subscribeToShifts = (
   callback: (shifts: Shift[]) => void,
   onError: (error: any) => void
 ) => {
-  const startStr = monthStr + "-01";
-  const endStr = monthStr + "-31"; 
-  
-  let query = db.collection("shifts")
-    .where("date", ">=", startStr)
-    .where("date", "<=", endStr);
-  
+  const startStr = monthStr + '-01';
+  const endStr = monthStr + '-31';
+
+  const query = db
+    .collection('shifts')
+    .where('date', '>=', startStr)
+    .where('date', '<=', endStr);
+
   return query.onSnapshot({
     next: (querySnapshot) => {
       const shifts: Shift[] = [];
-      querySnapshot.forEach((doc) => { 
+      querySnapshot.forEach((doc) => {
         const data = doc.data() as Shift;
         if (!!data.isAudit === isAudit) {
-          shifts.push(data); 
+          shifts.push(data);
         }
       });
       callback(shifts);
@@ -144,47 +175,69 @@ export const subscribeToShifts = (
 };
 
 export const saveShiftToDb = async (shift: Shift) => {
-  // Explicitně vytvoříme nový objekt a doplníme výchozí hodnoty
-  // Tím zajistíme, že do sanitizeData vůbec nevstoupí 'undefined' klíče z původního objektu
-  const plainShift = {
-    id: shift.id,
-    employeeId: shift.employeeId,
-    date: shift.date,
-    availability: shift.availability || '',
-    confirmedType: shift.confirmedType || '',
-    startTime: shift.startTime || '',
-    endTime: shift.endTime || '',
-    breakDuration: shift.breakDuration || 0,
-    note: shift.note || '',
+  // Bezpečný ID fallback (pokud by někde přišel shift bez id)
+  const id =
+    shift.id ??
+    (shift.employeeId && shift.date ? `${shift.employeeId}-${shift.date}` : undefined);
+
+  if (!id) {
+    const err = new Error('saveShiftToDb: Missing shift.id (and cannot derive from employeeId/date)');
+    await logErrorToDb(err, 'Save Shift');
+    throw err;
+  }
+
+  // Vytvoříme „plain“ objekt s defaulty, aby se minimalizovala šance na undefined.
+  const plainShift: Shift = {
+    ...(shift as any),
+    id,
+    availability: shift.availability ?? '',
+    confirmedType: shift.confirmedType ?? '',
+    startTime: shift.startTime ?? '',
+    endTime: shift.endTime ?? '',
+    breakDuration: shift.breakDuration ?? 0,
+    note: shift.note ?? '',
     isWeekend: !!shift.isWeekend,
     isOffered: !!shift.isOffered,
     isAudit: !!shift.isAudit,
-    history: shift.history || []
+    history: shift.history ?? []
   };
 
-  // Pro jistotu ještě proženeme sanitizací (hlavně kvůli vnořeným objektům v history)
-  const dataToSave = sanitizeData(plainShift);
-  
-  await db.collection("shifts").doc(dataToSave.id).set(dataToSave);
+  const dataToSave = sanitizeForFirestore(plainShift);
+
+  try {
+    await db.collection('shifts').doc(id).set(dataToSave, { merge: true });
+  } catch (error) {
+    await logErrorToDb(error, 'Save Shift');
+    throw error;
+  }
 };
 
 export const subscribeToTasks = (callback: (tasks: Task[]) => void) => {
-  return db.collection("tasks").orderBy("createdAt", "desc").onSnapshot(snap => {
-    const tasks: Task[] = [];
-    snap.forEach(doc => tasks.push({ id: doc.id, ...doc.data() } as Task));
-    callback(tasks);
-  });
+  return db
+    .collection('tasks')
+    .orderBy('createdAt', 'desc')
+    .onSnapshot((snap) => {
+      const tasks: Task[] = [];
+      snap.forEach((doc) => tasks.push({ id: doc.id, ...doc.data() } as Task));
+      callback(tasks);
+    });
 };
 
 export const saveTaskToDb = async (task: Task) => {
-  const id = task.id || db.collection("tasks").doc().id;
-  await db.collection("tasks").doc(id).set(sanitizeData({
-      ...task,
-      id,
-      createdAt: task.createdAt || new Date().toISOString()
-  }), { merge: true });
+  const id = task.id || db.collection('tasks').doc().id;
+  await db
+    .collection('tasks')
+    .doc(id)
+    .set(
+      sanitizeForFirestore({
+        ...task,
+        id,
+        createdAt: task.createdAt || new Date().toISOString()
+      }),
+      { merge: true }
+    );
 };
 
 export const deleteTaskFromDb = async (taskId: string) => {
-  await db.collection("tasks").doc(taskId).delete();
+  await db.collection('tasks').doc(taskId).delete();
 };
