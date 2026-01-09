@@ -1,19 +1,34 @@
-import firebase from 'firebase/compat/app';
-import 'firebase/compat/firestore';
+// Use Firebase Admin SDK so we can authenticate with a service account
+import admin from 'firebase-admin';
+import fs from 'fs';
 
-// Kopie firebase config (stejná jako v firebase.ts)
-const firebaseConfig = {
-  apiKey: "AIzaSyAYcJxQflWNyk7_8JpYYYDEk1WJ8OZeJnw",
-  authDomain: "smeny-5be44.firebaseapp.com",
-  projectId: "smeny-5be44",
-  storageBucket: "smeny-5be44.firebasestorage.app",
-  messagingSenderId: "784512255996",
-  appId: "1:784512255996:web:ad1f66ecf7f5aab36a9479",
-  measurementId: "G-8F4MFFDMQM"
-};
+// Require that GOOGLE_APPLICATION_CREDENTIALS points to the JSON key file
+const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+if (!keyPath) {
+  console.error('Environment variable GOOGLE_APPLICATION_CREDENTIALS is not set.');
+  console.error('Set it to the path of the service account JSON and retry.');
+  process.exit(1);
+}
 
-const app = !firebase.apps.length ? firebase.initializeApp(firebaseConfig) : firebase.app();
-const db = firebase.firestore();
+let serviceAccount;
+try {
+  const raw = fs.readFileSync(keyPath, 'utf8');
+  serviceAccount = JSON.parse(raw);
+} catch (err) {
+  console.error('Failed to read or parse service account JSON at', keyPath, err.message || err);
+  process.exit(1);
+}
+
+try {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+} catch (err) {
+  console.error('Failed to initialize Firebase Admin SDK with key:', keyPath, err.message || err);
+  process.exit(1);
+}
+
+const db = admin.firestore();
 
 const sanitizeForFirestore = (value) => {
   if (value === undefined) return undefined;
