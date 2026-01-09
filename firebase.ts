@@ -216,7 +216,7 @@ export const saveShiftToDb = async (shift: Shift) => {
     JSON.stringify(sanitized === undefined ? {} : sanitized)
   );
 
-  // Debug: detect any undefined values in the original `shift` object
+  // Debug: detect any undefined values in a payload (Firestore rejects them).
   const findUndefinedPaths = (value: any, prefix = ''): string[] => {
     const res: string[] = [];
     if (value === undefined) {
@@ -243,6 +243,16 @@ export const saveShiftToDb = async (shift: Shift) => {
   const undefinedPaths = findUndefinedPaths(shift);
   if (undefinedPaths.length > 0) {
     console.error('saveShiftToDb: original shift contains undefined fields', id, undefinedPaths, shift);
+  }
+
+  const sanitizedUndefinedPaths = findUndefinedPaths(dataToSave);
+  if (sanitizedUndefinedPaths.length > 0) {
+    const err = new Error(
+      `saveShiftToDb: sanitized payload still contains undefined fields for ${id}: ${sanitizedUndefinedPaths.join(', ')}`
+    );
+    console.error(err.message, dataToSave);
+    await logErrorToDb(err, 'Save Shift - Undefined After Sanitize');
+    throw err;
   }
 
   try {
