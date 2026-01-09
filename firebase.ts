@@ -24,6 +24,15 @@ db.settings({ ignoreUndefinedProperties: true }); // <— přidáno
 export const auth = firebaseApp.auth();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
+// Expose firebase objects to `window` for quick debugging in development only.
+// This helps inspect `auth.currentUser`, `db` and calls from the browser console.
+if (typeof window !== 'undefined' && (import.meta as any)?.env?.DEV) {
+  (window as any).firebaseApp = firebaseApp;
+  (window as any).firebase = firebase;
+  (window as any).db = db;
+  (window as any).auth = auth;
+}
+
 /**
  * Funkce, která rekurzivně odstraní z objektu všechny `undefined` hodnoty,
  * zachová `null`, `Date` a Firestore Timestamp.
@@ -170,6 +179,7 @@ export const subscribeToShifts = (
 };
 
 export const saveShiftToDb = async (shift: Shift) => {
+   console.log('saveShiftToDb CALLED', shift);
   // Bezpečný fallback pro ID (pokud by `shift.id` nebylo definované)
   const id =
     shift.id ??
