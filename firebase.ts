@@ -202,7 +202,11 @@ export const saveShiftToDb = async (shift: Shift) => {
     history: shift.history ?? []
   };
 
-  const dataToSave = sanitizeForFirestore(plainShift);
+  // Nejbezpečnější varianta: nejprve aplikujeme naše očistění,
+  // poté spustíme JSON stringify/parse pro odstranění všech `undefined` hodnot
+  // (včetně těch, které by sanitizeForFirestore případně přehlédl).
+  const sanitized = sanitizeForFirestore(plainShift);
+  const dataToSave = JSON.parse(JSON.stringify(sanitized === undefined ? {} : sanitized));
 
   try {
     await db.collection('shifts').doc(id).set(dataToSave, { merge: true });
