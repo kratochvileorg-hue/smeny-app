@@ -13,44 +13,36 @@ const firebaseConfig = {
   measurementId: "G-8F4MFFDMQM"
 };
 
-// Initialize Firebase app once
+// Inicializace Firebase aplikace (jen jednou)
 export const firebaseApp = !firebase.apps.length
   ? firebase.initializeApp(firebaseConfig)
   : firebase.app();
 
 export const db = firebaseApp.firestore();
+db.settings({ ignoreUndefinedProperties: true }); // <— přidáno
+
 export const auth = firebaseApp.auth();
 export const googleProvider = new firebase.auth.GoogleAuthProvider();
 
 /**
- * Firestore neakceptuje hodnotu `undefined` nikde v objektu (ani vnořeně).
- * Tahle funkce rekurzivně:
- *  - odstraní klíče s hodnotou `undefined`
- *  - v polích odstraní `undefined` prvky
- *  - zachová `null`
- *  - zachová Date a Firestore Timestamp
+ * Funkce, která rekurzivně odstraní z objektu všechny `undefined` hodnoty,
+ * zachová `null`, `Date` a Firestore Timestamp.
+ * Arrays i objekty projde rekurzivně.
  */
 const sanitizeForFirestore = (value: any): any => {
   if (value === undefined) return undefined;
   if (value === null) return null;
 
-  // primitives
   if (typeof value !== 'object') return value;
-
-  // Date
   if (value instanceof Date) return value;
-
-  // Firestore Timestamp (compat) má typicky toMillis()
   if (typeof (value as any)?.toMillis === 'function') return value;
 
-  // Arrays
   if (Array.isArray(value)) {
     return value
       .map((v) => sanitizeForFirestore(v))
       .filter((v) => v !== undefined);
   }
 
-  // Objects
   const out: any = {};
   for (const [k, v] of Object.entries(value)) {
     const cleaned = sanitizeForFirestore(v);
@@ -128,7 +120,10 @@ export const deleteCustomShiftFromDb = async (code: string) => {
   await db.collection('custom_shift_definitions').doc(code).delete();
 };
 
-export const logErrorToDb = async (error: any, context: string = 'unspecified') => {
+export const logErrorToDb = async (
+  error: any,
+  context: string = 'unspecified'
+) => {
   const errorMessage = error?.message || String(error);
   try {
     await db.collection('bug_reports').add({
@@ -138,7 +133,7 @@ export const logErrorToDb = async (error: any, context: string = 'unspecified') 
       userEmail: auth.currentUser?.email || 'anonymous'
     });
   } catch (e) {
-    // ignore logging errors
+    // Ignorovat chyby při logování
   }
 };
 
@@ -175,18 +170,20 @@ export const subscribeToShifts = (
 };
 
 export const saveShiftToDb = async (shift: Shift) => {
-  // Bezpečný ID fallback (pokud by někde přišel shift bez id)
+  // Bezpečný fallback pro ID (pokud by `shift.id` nebylo definované)
   const id =
     shift.id ??
     (shift.employeeId && shift.date ? `${shift.employeeId}-${shift.date}` : undefined);
 
   if (!id) {
-    const err = new Error('saveShiftToDb: Missing shift.id (and cannot derive from employeeId/date)');
+    const err = new Error(
+      'saveShiftToDb: Missing shift.id (and cannot derive from employeeId/date)'
+    );
     await logErrorToDb(err, 'Save Shift');
     throw err;
   }
 
-  // Vytvoříme „plain“ objekt s defaulty, aby se minimalizovala šance na undefined.
+  // Připravíme „plain“ objekt s defaulty, aby se minimalizovala šance na undefined
   const plainShift: Shift = {
     ...(shift as any),
     id,
@@ -202,11 +199,12 @@ export const saveShiftToDb = async (shift: Shift) => {
     history: shift.history ?? []
   };
 
-  // Nejbezpečnější varianta: nejprve aplikujeme naše očistění,
-  // poté spustíme JSON stringify/parse pro odstranění všech `undefined` hodnot
-  // (včetně těch, které by sanitizeForFirestore případně přehlédl).
+  // Očistíme objekt od undefined a převádíme JSON.parse/stringify, aby
+  // se odstranilo cokoli, co se do Firestore nesmí uložit.
   const sanitized = sanitizeForFirestore(plainShift);
-  const dataToSave = JSON.parse(JSON.stringify(sanitized === undefined ? {} : sanitized));
+  const dataToSave = JSON.parse(
+    JSON.stringify(sanitized === undefined ? {} : sanitized)
+  );
 
   try {
     await db.collection('shifts').doc(id).set(dataToSave, { merge: true });
@@ -222,7 +220,9 @@ export const subscribeToTasks = (callback: (tasks: Task[]) => void) => {
     .orderBy('createdAt', 'desc')
     .onSnapshot((snap) => {
       const tasks: Task[] = [];
-      snap.forEach((doc) => tasks.push({ id: doc.id, ...doc.data() } as Task));
+      snap.forEach((doc) =>
+        tasks.push({ id: doc.id, ...doc.data() } as Task)
+      );
       callback(tasks);
     });
 };
